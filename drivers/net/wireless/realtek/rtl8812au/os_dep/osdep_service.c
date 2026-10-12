@@ -2873,7 +2873,7 @@ inline BOOLEAN is_eol(char c)
 * Return	TRUE if c is represent for space
 *		FALSE otherwise.
 */
-static inline BOOLEAN rtw_is_space(char c)
+inline BOOLEAN rtw_is_space(char c)
 {
 	if (c == ' ' || c == '\t')
 		return _TRUE;
