@@ -17,9 +17,16 @@
 #include <linux/syscalls.h>
 #include <linux/pagemap.h>
 #include <linux/compat.h>
+#if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS_SUS_MOUNT)
+#include <linux/susfs_def.h>
+#endif
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
+
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+extern void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat);
+#endif
 
 /**
  * generic_fillattr - Fill in the basic attributes from the inode struct
@@ -32,6 +39,17 @@
  */
 void generic_fillattr(struct inode *inode, struct kstat *stat)
 {
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	if (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
+			unlikely(inode->i_state & INODE_STATE_SUS_KSTAT)) {
+		susfs_sus_ino_for_generic_fillattr(inode->i_ino, stat);
+		stat->mode = inode->i_mode;
+		stat->rdev = inode->i_rdev;
+		stat->uid = inode->i_uid;
+		stat->gid = inode->i_gid;
+		return;
+	}
+#endif
 	stat->dev = inode->i_sb->s_dev;
 	stat->ino = inode->i_ino;
 	stat->mode = inode->i_mode;
@@ -150,7 +168,12 @@ EXPORT_SYMBOL(vfs_statx_fd);
 
 #if IS_ENABLED(CONFIG_KSU_STATIC_HOOKS)
 extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+extern void ksu_handle_newfstat_ret(unsigned int *fd, struct stat __user **statbuf_ptr);
+#if defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64)
+extern void ksu_handle_fstat64_ret(unsigned long *fd, struct stat64 __user **statbuf_ptr);
 #endif
+#endif
+
 
 /**
  * vfs_statx - Get basic and extra attributes by filename
@@ -383,6 +406,11 @@ SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
 	if (!error)
 		error = cp_new_stat(&stat, statbuf);
 
+#if IS_ENABLED(CONFIG_KSU_STATIC_HOOKS)
+	if (!error)
+		ksu_handle_newfstat_ret(&fd, &statbuf);
+#endif
+
 	return error;
 }
 
@@ -508,6 +536,11 @@ SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
 
 	if (!error)
 		error = cp_new_stat64(&stat, statbuf);
+
+#if IS_ENABLED(CONFIG_KSU_STATIC_HOOKS) && (defined(__ARCH_WANT_STAT64) || defined(__ARCH_WANT_COMPAT_STAT64))
+	if (!error)
+		ksu_handle_fstat64_ret(&fd, &statbuf);
+#endif
 
 	return error;
 }
